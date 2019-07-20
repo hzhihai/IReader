@@ -1,0 +1,206 @@
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android-extensions'
+apply plugin: 'kotlin-android'
+apply plugin: 'org.greenrobot.greendao'
+
+static def releaseTime() {
+    return new Date().format("yy.MMddHH", TimeZone.getTimeZone("GMT+8"))
+}
+
+def name = "YueDu"
+def version = "2." + releaseTime()
+
+//def gitCommits = Integer.parseInt('git rev-list --count HEAD'.execute([], project.rootDir).text.trim())
+
+
+/**
+ * @param filename  要打开的文件名字
+ * @param propName   文件里面的键名字
+ * @param isRootProject   是否用rootProject 文件打开，true 的话，在编译时候可以得到值，打包时候无法得到值。false的话在打包时候可以得到值,编译时候 无法得到值
+ * @return  所选择的文件里面的propName对应的值
+ */
+def getProperty(String filename, String propName,boolean isRootProject) {
+    //在这里 必须是在rootProject.file  如果 file的话 ，编译时候会出错
+    def propsFile
+    if (isRootProject) {
+        propsFile = rootProject.file(filename)
+    }else {
+        propsFile=file(filename)
+    }
+    if (propsFile.exists()) {
+        def props = new Properties()
+        props.load(new FileInputStream(propsFile))
+        if (props[propName] != null) {
+            //下面这个输出在android studio3.1里面 在Build窗口 右边一个锤子下面 toggle哪里，就是原来的message哪里
+            print("versionCode "+props[propName])
+            return props[propName]
+        } else {
+            print("No such property " + propName + " in file " + filename);
+        }
+    } else {
+        print(filename + " does not exist!")
+    }
+}
+
+//version.properties  里面的vesioncode自增
+def PropertyAdd(String filename, String propName) {
+    //这里必须用file  如果用rootProject的话 则找不到file为null
+    def propsFile =file(filename)
+    //只有在打正式版的情况下才继续运行，否则退出方法，这样是为了防止 编译时候versionCode 也自增 if里面的参数可以在Build窗口里面 message 最上边[]里面就是
+    def runTasks = gradle.startParameter.taskNames
+    if (!(':app:assembleRelease' in runTasks)) {
+        return
+    }
+    if (propsFile.exists()) {
+        def props = new Properties()
+        props.load(new FileInputStream(propsFile))
+        //这里要注意 props[propName] 是String 类型
+        if (props[propName] != null) {
+            def code= (props[propName]).toInteger() //转成Integer
+            props[propName]= (++code).toString()  //自增 且转成String
+        } else {
+            print("No such property " + propName + " in file " + filename);
+        }
+        //在这里提交 对version.properties的更改
+        props.store(propsFile.newWriter(),null)
+    } else {
+        print(filename + " does not exist!")
+    }
+}
+
+android {
+    compileSdkVersion 29
+    buildToolsVersion "29.0.0"
+    defaultConfig {
+        applicationId "com.hai.ireader"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode getProperty("version.properties","versionCode",true)
+        versionName version
+        project.ext.set("archivesBaseName", name + "_" + version)
+        multiDexEnabled true
+        vectorDrawables.useSupportLibrary = true
+    }
+
+    signingConfigs {
+        myConfig {
+            storeFile file(RELEASE_STORE_FILE)
+            storePassword RELEASE_KEY_PASSWORD
+            keyAlias RELEASE_KEY_ALIAS
+            keyPassword RELEASE_STORE_PASSWORD
+        }
+    }
+
+    lintOptions {
+        abortOnError false
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.myConfig
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            PropertyAdd("version.properties", "versionCode")
+        }
+        debug {
+            signingConfig signingConfigs.myConfig
+            applicationIdSuffix '.debug'
+            versionNameSuffix 'debug'
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+        android.applicationVariants.all { variant ->
+            variant.outputs.all { output ->
+                outputFileName = "${name}_${defaultConfig.versionName}.apk"
+            }
+        }
+    }
+    compileOptions {
+        sourceCompatibility = '1.8'
+        targetCompatibility = '1.8'
+    }
+}
+
+dependencies {
+    testImplementation "junit:junit:4.13-beta-3"
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation project(':basemvplib')
+
+    api 'androidx.core:core-ktx:1.2.0-alpha02'
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+
+    //anko
+    implementation "org.jetbrains.anko:anko-sdk27:$rootProject.ankoVersion"
+    implementation "org.jetbrains.anko:anko-sdk27-listeners:$rootProject.ankoVersion"
+
+    //androidX
+    implementation "androidx.vectordrawable:vectordrawable:$rootProject.androidxVersion"
+    implementation 'androidx.multidex:multidex:2.0.1'
+    implementation 'androidx.constraintlayout:constraintlayout:2.0.0-beta2'
+    implementation 'androidx.cardview:cardview:1.0.0'
+    implementation "androidx.media:media:$rootProject.androidxVersion"
+    implementation 'androidx.legacy:legacy-support-v4:1.0.0'
+
+    //google
+    implementation "com.google.android.material:material:$rootProject.materialVersion"
+    implementation "com.google.code.gson:gson:$rootProject.gsonVersion"
+    implementation 'com.google.android:flexbox:1.1.0'
+
+    //J_SOUP
+    implementation "org.jsoup:jsoup:$rootProject.jsoupVersion"
+    implementation "cn.wanghaomiao:JsoupXpath:$rootProject.JsoupXpathVersion"
+    implementation "com.jayway.jsonpath:json-path:$rootProject.jsonpathVersion"
+
+    //JS
+    implementation 'com.github.gedoor:rhino-android:1.3'
+
+    //GreenDao
+    implementation "org.greenrobot:greendao:$rootProject.greendaoVersion"
+    implementation "com.github.yuweiguocn:GreenDaoUpgradeHelper:$rootProject.greenDaoUpgradeVersion"
+
+    //Glide
+    implementation "com.github.bumptech.glide:glide:$rootProject.glideVersion"
+    annotationProcessor "com.github.bumptech.glide:compiler:$rootProject.glideVersion"
+
+    //CircleImageView
+    implementation "de.hdodenhof:circleimageview:$rootProject.circleimageVersion"
+
+    //bind view
+    implementation "com.jakewharton:butterknife:$rootProject.butterknifeVersion"
+    annotationProcessor "com.jakewharton:butterknife-compiler:$rootProject.butterknifeVersion"
+
+    //webServer
+    implementation "org.nanohttpd:nanohttpd:$rootProject.nanohttpdVersion"
+    implementation "org.nanohttpd:nanohttpd-websocket:$rootProject.nanohttpdVersion"
+
+    //二维码
+    implementation 'cn.bingoogolapple:bga-qrcode-zxing:1.3.6'
+
+    //颜色选择
+    implementation "com.jaredrummler:colorpicker:$rootProject.colorpickerVersion"
+
+    //简繁转换
+    implementation "com.luhuiguo:chinese-utils:$rootProject.chineseVersion"
+
+    //字符串比较
+    implementation "net.ricecode:string-similarity:$rootProject.similarityVersion"
+
+    //MarkDown
+    implementation "ru.noties.markwon:core:3.1.0"
+
+    //epub
+    implementation("nl.siegmann.epublib:epublib-core:$rootProject.epublibVersion") {
+        exclude group: 'org.slf4j'
+        exclude group: 'xmlpull'
+    }
+}
+
+greendao {
+    schemaVersion 63
+    daoPackage 'com.hai.ireader.dao'
+    targetGenDir 'src/main/java'
+}
+
+repositories {
+    mavenCentral()
+}
